@@ -1,0 +1,18 @@
+{
+    "name": "sprite-shrink",
+    "displayName": "Sprite Shrink",
+    "description": "Quickly animate sprites shrinking and growing!",
+    "version": "0.1",
+    "author": { "name": "David Fletcher",
+                "email": "david.login@aol.com",
+                "url": "https://github.com/david-fletcher/font-custom" },
+    "contributors": [ ],
+    "publisher": "David Fletcher",
+    "license": "MIT",
+    "categories": [ "Scripts" ],
+    "contributes": {
+      "scripts": [
+          { "path": "./plugin.lua" }
+      ]
+    }
+  }
