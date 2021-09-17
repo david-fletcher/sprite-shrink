@@ -63,30 +63,67 @@ local function create_confirm(str)
     return confirm.data.confirm
 end
 
+-- get an Image's Size
+local function get_size(image)
+    return Size(image.width, image.height)
+end
+
+-- return a frame with given frameNumber == search (or return nil if doesn't exist)
+-- TODO: see if this can be deleted or not
+local function find_frame(sprite, search)
+    for k, v in ipairs(sprite.frames) do
+        if (v.frameNumber == search) then
+            return v
+        end
+    end
+
+    return nil
+end
+
 -- mathematical functions
 -- grow animation
 local function grow_image_by(image, delta)
+    -- get the current width and height as a Size object
+    local size = get_size(image)
 
+    -- resize and save back to the image
+    size.width = size.width + delta
+    size.height = size.height + delta
+
+    image:resize{size=size, method="rotsprite", pivot=Point(image.width/2, image.height/2)}
 end
 
 -- shrink animation
 local function shrink_image_by(image, delta)
+    -- get the current width and height as a Size object
+    local size = get_size(image)
 
+    -- resize and save back to the image
+    size.width = size.width - delta
+    size.height = size.height - delta
+
+    image:resize{size=size, method="rotsprite", pivot=Point(image.width/2, image.height/2)}
 end
 
 -- get linear delta
 local function linear_delta(props, total_frames, current_frame)
+    local delta = 0
 
+    -- since this is linear, we can just do a simple multiply
+    local step_size = props.linear_delta_px
+    delta = (current_frame - props.start_frame) * step_size
+
+    return delta
 end
 
 -- get cubic delta
 local function cubic_delta(props, total_frames, current_frame)
-
+    -- TODO: write this function
 end
 
 -- dialog functions
 -- open page1 again ("Previous" was clicked)
-local function openPage1(page2)
+local function openPage1()
     -- close page2 and navigate back to page1
     page2:close()
 
@@ -94,7 +131,7 @@ local function openPage1(page2)
 end
 
 -- close page1 and open page2 with page1's properties
-local function openPage2(page1)
+local function openPage2()
     -- grab and save page1's data
     local props = page1.data
     page1:close()
@@ -144,7 +181,7 @@ local function cancelWizard(dlg)
 end
 
 -- main brunt of the logic begins here
-local function processAnimation(page2)
+local function processAnimation()
     page2:close()
 
     -- merge dialog properties into one easy to use object
@@ -157,33 +194,89 @@ local function processAnimation(page2)
         props[k] = v
     end
 
-    -- initialize helper variables
-    -- grab the active cel's image
-    local original_img = app.activeImage
+    -- start a transaction so it can be "undone" quickly and easily
+    app.transaction( function()
+        -- initialize helper variables
+        -- grab the references to the active objects
+        local sprite = app.activeSprite
+        local start_frame = props.start_frame
+        local original_pos = app.activeCel.position
+        local original_img = app.activeCel.image
+        local original_layer = app.activeLayer
 
-    -- grab frame information
-    local start_frame = props.start_frame
-    local end_frame = props.start_frame + props.dur_frames
+        -- grab frame information
+        local end_frame = props.start_frame + props.dur_frames - 1
 
-    -- get the transformation function we will be using
-    local transform_func = function() end
-    if (props.grow_shrink == "Shrink") then
-        transform_func = shrink_image_by
-    else
-        transform_func = grow_image_by
+        -- get the transformation function we will be using
+        local transform_func = function() end
+        if (props.grow_shrink == "Shrink") then
+            transform_func = shrink_image_by
+        else
+            transform_func = grow_image_by
+        end
+
+        -- get the scaling function we will be using
+        local scale_func = function() end
+        if (props.ease_type == "Linear") then
+            scale_func = linear_delta
+        else
+            scale_func = cubic_delta
+        end
+
+        -- set the active frame to start_frame
+        for i=start_frame, end_frame do
+            -- create a new frame
+            app.activeFrame = sprite:newEmptyFrame(i)
+
+            -- new frame has last frame's image currently; we need it to have the original_img
+            local cel = sprite:newCel(original_layer, app.activeFrame, original_img, original_pos)
+            app.activeCel = cel
+
+            -- commit the transform
+            local delta = scale_func(props, props.dur_frames, i)
+            transform_func(app.activeCel.image, delta)
+        end
+
+    end ) -- end transaction
+end
+
+-- validate properties
+local function validate_properties()
+    -- merge dialog properties into one easy to use object
+    local props = {}
+    for k, v in pairs(page1.data) do
+        props[k] = v
     end
 
-    -- get the scaling function we will be using
-    local scale_func = function() end
+    for k, v in pairs(page2.data) do
+        props[k] = v
+    end
+
+    -- validate fields
+    if (props.start_frame == nil) or (props.start_frame < 1) then
+        return "The starting frame must be 1 or higher."
+    elseif (app.activeSprite.frames[props.start_frame] == nil) then
+        return "The starting frame does not exist."
+    end
+
+    if (props.dur_frames == nil) or (props.dur_frames < 1) then
+        return "The frame duration must be 1 or higher."
+    end
+
+    -- only validate against page2 props that were typed in
     if (props.ease_type == "Linear") then
-        scale_func = linear_delta
-    else
-        scale_func = cubic_delta
+        if (props.linear_delta_px < 1) then
+            if not create_confirm("The change in pixels between each frame is currently negative or 0. Continue?") then
+                return "User cancelled animation creation."
+            end
+        end
     end
 
-    -- loop from start_frame to end_frame and animate accordingly
-    for i=start_frame, end_frame do
+    -- TODO: validate cubic props
 
+    -- script doesn't function if we don't have an active cel
+    if (app.activeCel == nil) then
+        return "The current cel has no pixel information. Aborting."
     end
 end
 
@@ -244,7 +337,7 @@ page1:button {
     id="next",
     text="Next",
     onclick=function()
-        openPage2(page1)
+        openPage2()
     end
 }
 
@@ -279,7 +372,7 @@ page2:button {
     id="back",
     text="Back",
     onclick=function()
-        openPage1(page2)
+        openPage1()
     end
 }
 
@@ -287,8 +380,10 @@ page2:button {
     id="ok",
     text="OK",
     onclick=function()
-        local confirmed = create_confirm("Animation will begin on frame X; using the image in the active cel. Continue?")
-        if (confirmed) then processAnimation(page2) end
+        local err = validate_properties()
+        if (err ~= nil) then create_error(err, page2, 0) return end
+        local confirmed = create_confirm("Animation will begin on frame "..page1.data.start_frame.."; using the image in the active cel. Continue?")
+        if (confirmed) then processAnimation() end
     end
 }
 

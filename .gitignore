@@ -1,5 +1,6 @@
 # Other ignores
 **.DS_Store
+**example.*
 
 # Compiled Lua sources
 luac.out
