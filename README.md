@@ -2,7 +2,7 @@
 
 ![hero image](./assets/hero.png)
 
-Don't let the name fool you! This is an Aseprite extension that allows you to quickly stage a single cel of an animation to be shrunk or grown across a number of frames. Currently there are two animation modes available: `Linear` and `Cubic`!
+This is an Aseprite extension that allows you to quickly stage a single cel of an animation to be shrunk or grown across a number of frames. Currently there are two animation modes available: `Linear` and `Cubic`!
 
 ## How to Use Sprite Shrink
 
