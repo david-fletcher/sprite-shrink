@@ -68,18 +68,6 @@ local function get_size(image)
     return Size(image.width, image.height)
 end
 
--- return a frame with given frameNumber == search (or return nil if doesn't exist)
--- TODO: see if this can be deleted or not
-local function find_frame(sprite, search)
-    for k, v in ipairs(sprite.frames) do
-        if (v.frameNumber == search) then
-            return v
-        end
-    end
-
-    return nil
-end
-
 -- mathematical functions
 -- grow animation
 local function grow_image_by(image, delta)
@@ -106,19 +94,28 @@ local function shrink_image_by(image, delta)
 end
 
 -- get linear delta
-local function linear_delta(props, total_frames, current_frame)
-    local delta = 0
-
-    -- since this is linear, we can just do a simple multiply
-    local step_size = props.linear_delta_px
-    delta = (current_frame - props.start_frame) * step_size
-
-    return delta
+local function linear_delta(props, total_frames, current_frame, image)
+    -- since this is linear, we can just do simple addition
+    return (current_frame - props.start_frame) * (props.linear_delta_px)
 end
 
 -- get cubic delta
-local function cubic_delta(props, total_frames, current_frame)
-    -- TODO: write this function
+local function cubic_delta(props, total_frames, current_frame, image)
+    local delta = 0
+    local size = get_size(image)
+
+    local time = ((current_frame - props.start_frame) / total_frames) * 2
+    local width_delta = math.abs(props.cubic_intended_width - size.width)
+    
+    -- equations found from: https://www.gizma.com/easing/
+    if (time < 1) then
+        delta = (width_delta / 2) * (time ^ 3)
+    else
+        time = time - 2
+        delta = (width_delta / 2) * ((time ^ 3) + 2)
+    end
+        
+    return delta
 end
 
 -- dialog functions
@@ -144,12 +141,7 @@ local function openPage2()
         }
 
         page2:modify {
-            id="max_delta_px",
-            visible=false
-        }
-
-        page2:modify {
-            id="ease_frames",
+            id="cubic_intended_width",
             visible=false
         }
     else
@@ -159,12 +151,7 @@ local function openPage2()
         }
 
         page2:modify {
-            id="max_delta_px",
-            visible=true
-        }
-        
-        page2:modify {
-            id="ease_frames",
+            id="cubic_intended_width",
             visible=true
         }
     end
@@ -223,17 +210,36 @@ local function processAnimation()
             scale_func = cubic_delta
         end
 
+        -- copy the non-animated layer data
+        local copy_cels = {}
+        for idx, layer in ipairs(sprite.layers) do
+            local cel = layer:cel(start_frame)
+            if (cel ~= nil) then
+                copy_cels[idx] = {
+                    image = cel.image,
+                    pos = cel.position
+                }
+            end
+        end
+
         -- set the active frame to start_frame
         for i=start_frame, end_frame do
             -- create a new frame
             app.activeFrame = sprite:newEmptyFrame(i)
 
-            -- new frame has last frame's image currently; we need it to have the original_img
+            -- draw back all other layers as they were before
+            for idx, layer in ipairs(sprite.layers) do
+                if (copy_cels[idx] ~= nil) then
+                    local paste_cel = sprite:newCel(layer, app.activeFrame, copy_cels[idx].image, copy_cels[idx].pos)
+                end
+            end
+
+            -- populate a new (animated) cel with the original_img
             local cel = sprite:newCel(original_layer, app.activeFrame, original_img, original_pos)
             app.activeCel = cel
 
             -- commit the transform
-            local delta = scale_func(props, props.dur_frames, i)
+            local delta = scale_func(props, props.dur_frames, i, original_img)
             transform_func(app.activeCel.image, delta)
         end
 
@@ -272,7 +278,13 @@ local function validate_properties()
         end
     end
 
-    -- TODO: validate cubic props
+    if (props.ease_type == "Cubic") then
+        if props.cubic_intended_width < 0 then
+            if not create_confirm("The target for the final sprite's width is negative. Continue?") then
+                return "User cancelled animation creation."
+            end
+        end
+    end
 
     -- script doesn't function if we don't have an active cel
     if (app.activeCel == nil) then
@@ -353,14 +365,8 @@ page2:number {
 }
 
 page2:number {
-    id="max_delta_px",
-    label="What is the max each frame should change in size (px)?",
-    decimals=0
-}
-
-page2:number {
-    id="ease_frames",
-    label="How many frames to ease the animation?",
+    id="cubic_intended_width",
+    label="What is the WIDTH (in px) that you'd like the last frame to be?",
     decimals=0
 }
 
